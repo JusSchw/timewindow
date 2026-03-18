@@ -1,6 +1,6 @@
 # timewindow
 
-Trait-based abstractions for time windows, recurring intervals, and dynamic schedules
+Generic time-window generation for recurring, overlapping, and metadata-rich intervals
 
 ## License
 
