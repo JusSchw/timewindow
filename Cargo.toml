@@ -1,0 +1,12 @@
+[package]
+name = "timewindow"
+version = "0.1.0"
+edition = "2024"
+authors = ["Justin Schwab"]
+description = "Generic time-window generation for recurring, overlapping, and metadata-rich intervals"
+repository = "https://github.com/JusSchw/timewindow"
+readme = "README.md"
+license = "MIT"
+
+[dependencies]
+chrono = "0.4"
