@@ -80,6 +80,7 @@ impl<M> Window<M> {
     ///
     /// assert!(invalid.is_none());
     /// ```
+    #[inline]
     pub fn new(start: DateTime<Utc>, end: DateTime<Utc>, meta: M) -> Option<Self> {
         (start < end).then_some(Self { start, end, meta })
     }
@@ -87,6 +88,7 @@ impl<M> Window<M> {
     /// Returns `true` if the window has not started yet at `now`.
     ///
     /// Equivalent to `now < self.start`.
+    #[inline]
     pub fn is_upcoming(&self, now: DateTime<Utc>) -> bool {
         now < self.start
     }
@@ -96,6 +98,7 @@ impl<M> Window<M> {
     /// This uses half-open interval semantics:
     ///
     /// `self.start <= now && now < self.end`
+    #[inline]
     pub fn is_active(&self, now: DateTime<Utc>) -> bool {
         self.start <= now && now < self.end
     }
@@ -103,11 +106,13 @@ impl<M> Window<M> {
     /// Returns `true` if the window has ended at or before `now`.
     ///
     /// Equivalent to `now >= self.end`.
+    #[inline]
     pub fn is_expired(&self, now: DateTime<Utc>) -> bool {
         now >= self.end
     }
 
     /// Returns the total duration of the window.
+    #[inline]
     pub fn duration(&self) -> Duration {
         self.end - self.start
     }

@@ -6,12 +6,6 @@ use crate::{BidirectionalWindowSource, Window, WindowSource};
 ///
 /// This iterator repeatedly calls [`WindowSource::next_window`] starting from an
 /// initial cursor.
-///
-/// # Important
-///
-/// Correct iteration depends on the source's `next_window` semantics and on how
-/// the cursor is advanced between iterations. Implementers should ensure that
-/// repeated queries make progress and do not return the same window forever.
 pub struct NextWindows<'a, S>
 where
     S: WindowSource,
@@ -50,12 +44,6 @@ where
 ///
 /// This iterator repeatedly calls [`BidirectionalWindowSource::prev_window`]
 /// starting from an initial cursor.
-///
-/// # Important
-///
-/// Correct iteration depends on the source's `prev_window` semantics and on how
-/// the cursor is advanced between iterations. Implementers should ensure that
-/// repeated queries make progress and do not return the same window forever.
 pub struct PrevWindows<'a, S>
 where
     S: BidirectionalWindowSource,

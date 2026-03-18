@@ -39,11 +39,9 @@ pub trait WindowSource {
 
     /// Returns the next window after `after`.
     ///
-    /// Implementers should document whether this is strictly after `after` or
-    /// may include a window whose start is exactly equal to `after`.
-    ///
-    /// For reliable iterator behavior, implementations should ensure that
-    /// repeated calls used for traversal make progress.
+    /// Must return a window whose `start` is strictly greater than `after`.
+    /// Returning a window with `start == after` can cause non-progressing
+    /// iteration when used with [`crate::NextWindows`]
     fn next_window(&self, after: DateTime<Utc>) -> Option<Window<Self::Meta>>;
 }
 
@@ -57,10 +55,8 @@ pub trait WindowSource {
 pub trait BidirectionalWindowSource: WindowSource {
     /// Returns the previous window before `before`.
     ///
-    /// Implementers should document whether this is strictly before `before` or
-    /// may include a window whose start is exactly equal to `before`.
-    ///
-    /// For reliable reverse iteration, implementations should ensure that
-    /// repeated calls used for traversal make progress.
+    /// Must return a window whose `start` is strictly less than `before`.
+    /// Returning a window with `start == before` can cause non-progressing
+    /// iteration when used with [`crate::PrevWindows`].
     fn prev_window(&self, before: DateTime<Utc>) -> Option<Window<Self::Meta>>;
 }

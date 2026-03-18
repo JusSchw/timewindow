@@ -40,8 +40,6 @@
 //! # Timezone
 //!
 //! All times are represented as `DateTime<Utc>`.
-//!
-//! ```
 
 mod iter;
 mod source;
