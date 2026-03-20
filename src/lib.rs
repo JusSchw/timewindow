@@ -62,7 +62,7 @@
 //!
 //! All times are represented as `DateTime<Utc>`.
 //!
-//! //! # Example
+//! # Example
 //!
 //! ```rust
 //! use chrono::{Duration, TimeZone, Utc};
