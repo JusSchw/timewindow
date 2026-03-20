@@ -41,10 +41,12 @@
 //!
 //! All times are represented as `DateTime<Utc>`.
 
+mod derived;
 mod iter;
 mod source;
 mod window;
 
+pub use derived::{DerivedBidirectionalWindowSource, DerivedWindowSource};
 pub use iter::{BidirectionalWindowSourceExt, NextWindows, PrevWindows, WindowSourceExt};
 pub use source::{BidirectionalWindowSource, WindowSource};
 pub use window::Window;
