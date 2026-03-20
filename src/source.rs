@@ -44,19 +44,3 @@ pub trait WindowSource {
     /// iteration when used with [`crate::NextWindows`]
     fn next_window(&self, after: DateTime<Utc>) -> Option<Window<Self::Meta>>;
 }
-
-/// A [`WindowSource`] that also supports reverse lookup.
-///
-/// This trait is useful for:
-///
-/// - historical traversal
-/// - reverse iteration
-/// - finding the most recent previous window
-pub trait BidirectionalWindowSource: WindowSource {
-    /// Returns the previous window before `before`.
-    ///
-    /// Must return a window whose `start` is strictly less than `before`.
-    /// Returning a window with `start == before` can cause non-progressing
-    /// iteration when used with [`crate::PrevWindows`].
-    fn prev_window(&self, before: DateTime<Utc>) -> Option<Window<Self::Meta>>;
-}

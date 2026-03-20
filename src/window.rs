@@ -80,7 +80,6 @@ impl<M> Window<M> {
     ///
     /// assert!(invalid.is_none());
     /// ```
-    #[inline]
     pub fn new(start: DateTime<Utc>, end: DateTime<Utc>, meta: M) -> Option<Self> {
         (start < end).then_some(Self { start, end, meta })
     }
