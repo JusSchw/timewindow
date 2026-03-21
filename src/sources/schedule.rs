@@ -171,26 +171,49 @@ pub struct ScheduleSource<M> {
     schedules: Vec<Schedule<M>>,
 }
 
-/// Errors returned when constructing a [`ScheduleSource`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ScheduleSourceError {
-    /// The source was constructed with no schedules.
     EmptySchedules,
-    /// A schedule duration was zero or negative.
     NonPositiveDuration,
-    /// A schedule duration could not be represented in nanoseconds.
     DurationOutOfRange,
-    /// A rule had an invalid recurrence parameter such as `every == 0`.
     InvalidRule,
-    /// A weekly rule had no weekdays.
     EmptyWeekdays,
-    /// A monthly rule used an invalid day-of-month.
     InvalidDayOfMonth,
-    /// A yearly rule used an invalid month.
     InvalidMonth,
-    /// A yearly rule used an invalid day or impossible month/day combination.
     InvalidDayOfYear,
 }
+
+use std::fmt;
+
+impl fmt::Display for ScheduleSourceError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ScheduleSourceError::EmptySchedules => write!(f, "schedules must not be empty"),
+            ScheduleSourceError::NonPositiveDuration => {
+                write!(f, "schedule duration must be positive")
+            }
+            ScheduleSourceError::DurationOutOfRange => {
+                write!(
+                    f,
+                    "schedule duration is out of range for nanosecond precision"
+                )
+            }
+            ScheduleSourceError::InvalidRule => {
+                write!(f, "schedule rule has an invalid recurrence")
+            }
+            ScheduleSourceError::EmptyWeekdays => {
+                write!(f, "weekly schedule must contain weekdays")
+            }
+            ScheduleSourceError::InvalidDayOfMonth => write!(f, "invalid day of month"),
+            ScheduleSourceError::InvalidMonth => write!(f, "invalid month"),
+            ScheduleSourceError::InvalidDayOfYear => {
+                write!(f, "invalid day or month/day combination")
+            }
+        }
+    }
+}
+
+impl std::error::Error for ScheduleSourceError {}
 
 impl<M> ScheduleSource<M> {
     /// Creates a new source from a non-empty list of schedules.

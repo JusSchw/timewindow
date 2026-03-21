@@ -1,3 +1,5 @@
+use std::fmt;
+
 use chrono::{DateTime, Duration, Utc};
 
 use crate::{Window, WindowSource};
@@ -102,6 +104,38 @@ pub enum IntervalSourceError {
     NonPositiveDuration,
     DurationOutOfRange,
 }
+
+impl fmt::Display for IntervalSourceError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            IntervalSourceError::EmptyPattern => write!(f, "pattern must not be empty"),
+            IntervalSourceError::NegativeStart => write!(f, "pattern start must be non-negative"),
+            IntervalSourceError::StartOutOfRange => {
+                write!(f, "pattern start is out of range for nanosecond precision")
+            }
+            IntervalSourceError::NonPositiveEvery => {
+                write!(f, "pattern recurrence must be positive")
+            }
+            IntervalSourceError::EveryOutOfRange => {
+                write!(
+                    f,
+                    "pattern recurrence is out of range for nanosecond precision"
+                )
+            }
+            IntervalSourceError::NonPositiveDuration => {
+                write!(f, "pattern duration must be positive")
+            }
+            IntervalSourceError::DurationOutOfRange => {
+                write!(
+                    f,
+                    "pattern duration is out of range for nanosecond precision"
+                )
+            }
+        }
+    }
+}
+
+impl std::error::Error for IntervalSourceError {}
 
 impl<M> IntervalSource<M> {
     pub fn new(
