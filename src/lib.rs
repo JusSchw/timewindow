@@ -95,7 +95,6 @@ mod iter;
 mod source;
 mod window;
 
-#[cfg(feature = "sources")]
 pub mod sources;
 
 pub use derived::DerivedWindowSource;

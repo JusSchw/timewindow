@@ -1,6 +1,6 @@
 [package]
 name = "timewindow"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2024"
 authors = ["Justin Schwab"]
 description = "Generic time-window generation for recurring, overlapping, and metadata-rich intervals"
@@ -12,8 +12,10 @@ keywords = ["time", "window", "interval"]
 categories = ["date-and-time"]
 
 [features]
-default = ["sources"]
-sources = []
+default = ["interval", "schedule"]
+interval = []
+schedule = []
 
 [dependencies]
 chrono = "0.4"
+chrono-tz = "0.10"
