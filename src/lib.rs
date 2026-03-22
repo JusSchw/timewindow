@@ -72,9 +72,10 @@
 //! let anchor = Utc.with_ymd_and_hms(2026, 3, 20, 0, 0, 0).unwrap();
 //! let source = IntervalSource::single(
 //!     anchor,
-//!     Duration::hours(9),
-//!     Duration::days(1),
-//!     Duration::hours(2),
+//!     Duration::hours(9),     // recurrence point
+//!     Duration::zero(),       // offset from recurrence point
+//!     Duration::days(1),      // repeat every day
+//!     Duration::hours(2),     // window duration
 //!     "morning",
 //! )
 //! .unwrap();

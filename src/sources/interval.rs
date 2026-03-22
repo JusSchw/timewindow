@@ -8,10 +8,23 @@ use crate::{Window, WindowSource};
 ///
 /// Each pattern entry defines its own recurrence schedule:
 ///
-/// - `start` is the offset from the source anchor to the first occurrence
+/// - `at` is the offset from the source anchor to the recurrence point of the
+///   first occurrence
+/// - `offset` shifts the actual window start relative to that recurrence point
 /// - `every` is the recurrence period for subsequent occurrences
 /// - `duration` is the window length
 /// - `meta` is cloned into each generated occurrence
+///
+/// For occurrence index `k >= 0`, the recurrence point is:
+///
+/// - `anchor + at + k * every`
+///
+/// and the concrete window is:
+///
+/// - `start = anchor + at + k * every + offset`
+/// - `end = start + duration`
+///
+/// # Example
 ///
 /// If a source has:
 ///
@@ -19,35 +32,38 @@ use crate::{Window, WindowSource};
 ///
 /// and a pattern entry with:
 ///
-/// - start = 9 hours
-/// - every = 1 day
-/// - duration = 3 hours
+/// - at = 0 minutes
+/// - offset = -1 minute
+/// - every = 5 minutes
+/// - duration = 7 minutes
 ///
 /// then it produces windows like:
 ///
-/// - `[2026-03-20 09:00, 2026-03-20 12:00)`
-/// - `[2026-03-21 09:00, 2026-03-21 12:00)`
-/// - `[2026-03-22 09:00, 2026-03-22 12:00)`
+/// - `[2026-03-19 23:59, 2026-03-20 00:06)`
+/// - `[2026-03-20 00:04, 2026-03-20 00:11)`
+/// - `[2026-03-20 00:09, 2026-03-20 00:16)`
 ///
 /// and so on.
 ///
 /// Another entry in the same source could have a completely different cadence,
 /// for example:
 ///
-/// - start = 15 minutes
-/// - every = 2 hours
-/// - duration = 20 minutes
+/// - at = 9 hours
+/// - offset = 0 hours
+/// - every = 1 day
+/// - duration = 3 hours
 ///
 /// which would produce:
 ///
-/// - `[2026-03-20 00:15, 2026-03-20 00:35)`
-/// - `[2026-03-20 02:15, 2026-03-20 02:35)`
-/// - `[2026-03-20 04:15, 2026-03-20 04:35)`
+/// - `[2026-03-20 09:00, 2026-03-20 12:00)`
+/// - `[2026-03-21 09:00, 2026-03-21 12:00)`
+/// - `[2026-03-22 09:00, 2026-03-22 12:00)`
 ///
 /// and so on.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IntervalPattern<M> {
-    pub start: Duration,
+    pub at: Duration,
+    pub offset: Duration,
     pub every: Duration,
     pub duration: Duration,
     pub meta: M,
@@ -55,9 +71,16 @@ pub struct IntervalPattern<M> {
 
 impl<M> IntervalPattern<M> {
     /// Creates a new recurring pattern entry.
-    pub fn new(start: Duration, every: Duration, duration: Duration, meta: M) -> Self {
+    pub fn new(
+        at: Duration,
+        offset: Duration,
+        every: Duration,
+        duration: Duration,
+        meta: M,
+    ) -> Self {
         Self {
-            start,
+            at,
+            offset,
             every,
             duration,
             meta,
@@ -69,15 +92,20 @@ impl<M> IntervalPattern<M> {
 /// patterns sharing a common anchor.
 ///
 /// For each [`IntervalPattern`] and each integer occurrence index `k >= 0`,
-/// a concrete window occurrence is:
+/// define the recurrence point:
 ///
-/// - `start = anchor + pattern.start + k * pattern.every`
+/// - `point = anchor + pattern.at + k * pattern.every`
+///
+/// and the concrete window:
+///
+/// - `start = point + pattern.offset`
 /// - `end = start + pattern.duration`
 ///
 /// # Overlap
 ///
 /// Pattern entries may overlap each other. A single pattern entry may also
-/// overlap with its own subsequent occurrences if `duration > every`.
+/// overlap with its own subsequent occurrences if `duration > every`, or if
+/// `offset` causes windows to straddle neighboring recurrence points.
 ///
 /// # Canonical pattern rules
 ///
@@ -85,9 +113,11 @@ impl<M> IntervalPattern<M> {
 ///
 /// - `pattern` is not empty
 /// - for each pattern entry:
-///   - `start >= 0`
+///   - `at >= 0`
 ///   - `every > 0`
 ///   - `duration > 0`
+///
+/// `offset` may be negative, zero, or positive.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IntervalSource<M> {
     anchor: DateTime<Utc>,
@@ -97,8 +127,9 @@ pub struct IntervalSource<M> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum IntervalSourceError {
     EmptyPattern,
-    NegativeStart,
-    StartOutOfRange,
+    NegativeAt,
+    AtOutOfRange,
+    OffsetOutOfRange,
     NonPositiveEvery,
     EveryOutOfRange,
     NonPositiveDuration,
@@ -109,9 +140,17 @@ impl fmt::Display for IntervalSourceError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             IntervalSourceError::EmptyPattern => write!(f, "pattern must not be empty"),
-            IntervalSourceError::NegativeStart => write!(f, "pattern start must be non-negative"),
-            IntervalSourceError::StartOutOfRange => {
-                write!(f, "pattern start is out of range for nanosecond precision")
+            IntervalSourceError::NegativeAt => {
+                write!(f, "pattern recurrence point must be non-negative")
+            }
+            IntervalSourceError::AtOutOfRange => {
+                write!(
+                    f,
+                    "pattern recurrence point is out of range for nanosecond precision"
+                )
+            }
+            IntervalSourceError::OffsetOutOfRange => {
+                write!(f, "pattern offset is out of range for nanosecond precision")
             }
             IntervalSourceError::NonPositiveEvery => {
                 write!(f, "pattern recurrence must be positive")
@@ -147,14 +186,19 @@ impl<M> IntervalSource<M> {
         }
 
         for entry in &pattern {
-            if entry.start < Duration::zero() {
-                return Err(IntervalSourceError::NegativeStart);
+            if entry.at < Duration::zero() {
+                return Err(IntervalSourceError::NegativeAt);
             }
 
             entry
-                .start
+                .at
                 .num_nanoseconds()
-                .ok_or(IntervalSourceError::StartOutOfRange)?;
+                .ok_or(IntervalSourceError::AtOutOfRange)?;
+
+            entry
+                .offset
+                .num_nanoseconds()
+                .ok_or(IntervalSourceError::OffsetOutOfRange)?;
 
             if entry.every <= Duration::zero() {
                 return Err(IntervalSourceError::NonPositiveEvery);
@@ -176,8 +220,8 @@ impl<M> IntervalSource<M> {
         }
 
         pattern.sort_by(|a, b| {
-            a.start
-                .cmp(&b.start)
+            a.at.cmp(&b.at)
+                .then_with(|| a.offset.cmp(&b.offset))
                 .then_with(|| a.every.cmp(&b.every))
                 .then_with(|| a.duration.cmp(&b.duration))
         });
@@ -188,7 +232,8 @@ impl<M> IntervalSource<M> {
     /// Convenience constructor for a source with a single recurring interval.
     pub fn single(
         anchor: DateTime<Utc>,
-        start: Duration,
+        at: Duration,
+        offset: Duration,
         every: Duration,
         duration: Duration,
         meta: M,
@@ -196,7 +241,8 @@ impl<M> IntervalSource<M> {
         Self::new(
             anchor,
             vec![IntervalPattern {
-                start,
+                at,
+                offset,
                 every,
                 duration,
                 meta,
@@ -214,11 +260,11 @@ impl<M> IntervalSource<M> {
         &self.pattern
     }
 
-    fn pattern_start_ns(entry: &IntervalPattern<M>) -> i64 {
+    fn pattern_at_ns(entry: &IntervalPattern<M>) -> i64 {
         entry
-            .start
+            .at
             .num_nanoseconds()
-            .expect("validated in constructor: start fits in nanoseconds")
+            .expect("validated in constructor: at fits in nanoseconds")
     }
 
     fn pattern_every_ns(entry: &IntervalPattern<M>) -> i64 {
@@ -228,14 +274,7 @@ impl<M> IntervalSource<M> {
             .expect("validated in constructor: every fits in nanoseconds")
     }
 
-    fn pattern_duration_ns(entry: &IntervalPattern<M>) -> i64 {
-        entry
-            .duration
-            .num_nanoseconds()
-            .expect("validated in constructor: duration fits in nanoseconds")
-    }
-
-    fn occurrence_start_at(
+    fn recurrence_point_at(
         &self,
         entry: &IntervalPattern<M>,
         occurrence_index: i64,
@@ -244,11 +283,11 @@ impl<M> IntervalSource<M> {
             return None;
         }
 
+        let at_ns = Self::pattern_at_ns(entry);
         let every_ns = Self::pattern_every_ns(entry);
-        let start_ns = Self::pattern_start_ns(entry);
 
         let repeated_ns = every_ns.checked_mul(occurrence_index)?;
-        let total_ns = start_ns.checked_add(repeated_ns)?;
+        let total_ns = at_ns.checked_add(repeated_ns)?;
 
         self.anchor
             .checked_add_signed(Duration::nanoseconds(total_ns))
@@ -259,27 +298,28 @@ impl<M> IntervalSource<M> {
         M: Clone,
     {
         let entry = self.pattern.get(pattern_index)?;
-        let start = self.occurrence_start_at(entry, occurrence_index)?;
+        let point = self.recurrence_point_at(entry, occurrence_index)?;
+        let start = point.checked_add_signed(entry.offset)?;
         let end = start.checked_add_signed(entry.duration)?;
 
         Window::new(start, end, entry.meta.clone())
     }
 
-    fn occurrence_index_floor_for_time(
+    fn occurrence_index_floor_for_recurrence_point(
         &self,
         entry: &IntervalPattern<M>,
         time: DateTime<Utc>,
     ) -> i64 {
-        let first_start = match self.anchor.checked_add_signed(entry.start) {
+        let first_point = match self.anchor.checked_add_signed(entry.at) {
             Some(dt) => dt,
             None => {
                 return -1;
             }
         };
 
-        let delta = time - first_start;
+        let delta = time - first_point;
         let delta_ns = delta.num_nanoseconds().unwrap_or_else(|| {
-            if time < first_start {
+            if time < first_point {
                 i64::MIN
             } else {
                 i64::MAX
@@ -287,13 +327,6 @@ impl<M> IntervalSource<M> {
         });
 
         delta_ns.div_euclid(Self::pattern_every_ns(entry))
-    }
-
-    fn max_active_occurrences_back(entry: &IntervalPattern<M>) -> i64 {
-        let every_ns = Self::pattern_every_ns(entry);
-        let duration_ns = Self::pattern_duration_ns(entry);
-
-        (duration_ns - 1).div_euclid(every_ns)
     }
 }
 
@@ -307,16 +340,31 @@ where
         let mut windows = Vec::new();
 
         for (pattern_index, entry) in self.pattern.iter().enumerate() {
-            let current_occurrence = self.occurrence_index_floor_for_time(entry, now);
-            let max_back = Self::max_active_occurrences_back(entry);
+            let shifted_now = match now.checked_sub_signed(entry.offset) {
+                Some(t) => t,
+                None => continue,
+            };
 
-            let start_occurrence = current_occurrence.saturating_sub(max_back).max(0);
+            let range_start = match shifted_now.checked_sub_signed(entry.duration) {
+                Some(t) => t,
+                None => continue,
+            };
 
-            for occurrence_index in start_occurrence..=current_occurrence.max(-1) {
-                if occurrence_index < 0 {
-                    continue;
-                }
+            let last_occurrence =
+                self.occurrence_index_floor_for_recurrence_point(entry, shifted_now);
 
+            let first_occurrence = self
+                .occurrence_index_floor_for_recurrence_point(entry, range_start)
+                .saturating_add(1);
+
+            let start_idx = first_occurrence.max(0);
+            let end_idx = last_occurrence.max(-1);
+
+            if start_idx > end_idx {
+                continue;
+            }
+
+            for occurrence_index in start_idx..=end_idx {
                 if let Some(window) = self.window_at(pattern_index, occurrence_index) {
                     if window.is_active(now) {
                         windows.push(window);
@@ -332,21 +380,44 @@ where
     fn next_window(&self, after: DateTime<Utc>) -> Option<Window<Self::Meta>> {
         let mut best: Option<Window<Self::Meta>> = None;
 
-        for (pattern_index, entry) in self.pattern.iter().enumerate() {
-            let floor = self.occurrence_index_floor_for_time(entry, after);
+        for entry in &self.pattern {
+            let shifted_after = match after.checked_sub_signed(entry.offset) {
+                Some(t) => t,
+                None => continue,
+            };
 
+            let floor = self.occurrence_index_floor_for_recurrence_point(entry, shifted_after);
             let candidate_index = floor.saturating_add(1).max(0);
 
-            if let Some(window) = self.window_at(pattern_index, candidate_index) {
-                if window.start > after {
-                    match &best {
-                        Some(current)
-                            if current.start < window.start
-                                || (current.start == window.start && current.end <= window.end) => {
-                        }
-                        _ => best = Some(window),
-                    }
-                }
+            let point = match self.recurrence_point_at(entry, candidate_index) {
+                Some(point) => point,
+                None => continue,
+            };
+
+            let start = match point.checked_add_signed(entry.offset) {
+                Some(start) => start,
+                None => continue,
+            };
+
+            let end = match start.checked_add_signed(entry.duration) {
+                Some(end) => end,
+                None => continue,
+            };
+
+            let window = match Window::new(start, end, entry.meta.clone()) {
+                Some(window) => window,
+                None => continue,
+            };
+
+            if window.start <= after {
+                continue;
+            }
+
+            match &best {
+                Some(current)
+                    if current.start < window.start
+                        || (current.start == window.start && current.end <= window.end) => {}
+                _ => best = Some(window),
             }
         }
 
@@ -375,12 +446,13 @@ mod tests {
     }
 
     #[test]
-    fn rejects_negative_start() {
+    fn rejects_negative_at() {
         let anchor = dt(2026, 3, 20, 0, 0, 0);
         let err = IntervalSource::new(
             anchor,
             vec![IntervalPattern::new(
                 Duration::hours(-1),
+                Duration::zero(),
                 Duration::days(1),
                 Duration::hours(1),
                 (),
@@ -388,7 +460,7 @@ mod tests {
         )
         .unwrap_err();
 
-        assert_eq!(err, IntervalSourceError::NegativeStart);
+        assert_eq!(err, IntervalSourceError::NegativeAt);
     }
 
     #[test]
@@ -398,6 +470,7 @@ mod tests {
             anchor,
             vec![IntervalPattern::new(
                 Duration::hours(1),
+                Duration::zero(),
                 Duration::zero(),
                 Duration::hours(1),
                 (),
@@ -415,6 +488,7 @@ mod tests {
             anchor,
             vec![IntervalPattern::new(
                 Duration::hours(1),
+                Duration::zero(),
                 Duration::days(1),
                 Duration::zero(),
                 (),
@@ -433,12 +507,14 @@ mod tests {
             vec![
                 IntervalPattern::new(
                     Duration::hours(9),
+                    Duration::zero(),
                     Duration::days(1),
                     Duration::hours(3),
                     "morning",
                 ),
                 IntervalPattern::new(
                     Duration::hours(13),
+                    Duration::zero(),
                     Duration::days(1),
                     Duration::hours(4),
                     "afternoon",
@@ -462,6 +538,7 @@ mod tests {
             anchor,
             vec![IntervalPattern::new(
                 Duration::hours(9),
+                Duration::zero(),
                 Duration::days(1),
                 Duration::hours(3),
                 "morning",
@@ -484,12 +561,14 @@ mod tests {
             vec![
                 IntervalPattern::new(
                     Duration::hours(9),
+                    Duration::zero(),
                     Duration::days(1),
                     Duration::hours(4),
                     "a",
                 ),
                 IntervalPattern::new(
                     Duration::hours(11),
+                    Duration::zero(),
                     Duration::days(1),
                     Duration::hours(4),
                     "b",
@@ -513,6 +592,7 @@ mod tests {
             anchor,
             vec![IntervalPattern::new(
                 Duration::hours(23),
+                Duration::zero(),
                 Duration::days(1),
                 Duration::hours(3),
                 "late",
@@ -536,6 +616,7 @@ mod tests {
             anchor,
             vec![IntervalPattern::new(
                 Duration::minutes(0),
+                Duration::zero(),
                 Duration::hours(1),
                 Duration::hours(3),
                 "x",
@@ -558,6 +639,7 @@ mod tests {
         let src = IntervalSource::single(
             anchor,
             Duration::minutes(10),
+            Duration::zero(),
             Duration::hours(1),
             Duration::minutes(20),
             "x",
@@ -578,12 +660,14 @@ mod tests {
             vec![
                 IntervalPattern::new(
                     Duration::minutes(15),
+                    Duration::zero(),
                     Duration::hours(2),
                     Duration::minutes(20),
                     "fast",
                 ),
                 IntervalPattern::new(
                     Duration::hours(9),
+                    Duration::zero(),
                     Duration::days(1),
                     Duration::hours(1),
                     "daily",
@@ -595,5 +679,65 @@ mod tests {
         let next = src.next_window(dt(2026, 3, 20, 8, 0, 0)).unwrap();
         assert_eq!(next.start, dt(2026, 3, 20, 8, 15, 0));
         assert_eq!(next.meta, "fast");
+    }
+
+    #[test]
+    fn negative_offset_can_start_window_before_anchor() {
+        let anchor = dt(2026, 3, 20, 0, 0, 0);
+        let src = IntervalSource::single(
+            anchor,
+            Duration::zero(),
+            Duration::minutes(-1),
+            Duration::minutes(5),
+            Duration::minutes(7),
+            "x",
+        )
+        .unwrap();
+
+        let next = src.next_window(dt(2026, 3, 19, 23, 58, 0)).unwrap();
+        assert_eq!(next.start, dt(2026, 3, 19, 23, 59, 0));
+        assert_eq!(next.end, dt(2026, 3, 20, 0, 6, 0));
+        assert_eq!(next.meta, "x");
+    }
+
+    #[test]
+    fn negative_offset_overlaps_front_and_back() {
+        let anchor = dt(2026, 3, 20, 0, 0, 0);
+        let src = IntervalSource::single(
+            anchor,
+            Duration::zero(),
+            Duration::minutes(-1),
+            Duration::minutes(5),
+            Duration::minutes(7),
+            "x",
+        )
+        .unwrap();
+
+        let active = src.active_windows(dt(2026, 3, 20, 0, 5, 30));
+        assert_eq!(active.len(), 2);
+
+        assert_eq!(active[0].start, dt(2026, 3, 19, 23, 59, 0));
+        assert_eq!(active[0].end, dt(2026, 3, 20, 0, 6, 0));
+
+        assert_eq!(active[1].start, dt(2026, 3, 20, 0, 4, 0));
+        assert_eq!(active[1].end, dt(2026, 3, 20, 0, 11, 0));
+    }
+
+    #[test]
+    fn next_window_respects_negative_offset_phase() {
+        let anchor = dt(2026, 3, 20, 0, 0, 0);
+        let src = IntervalSource::single(
+            anchor,
+            Duration::zero(),
+            Duration::minutes(-1),
+            Duration::minutes(5),
+            Duration::minutes(7),
+            "x",
+        )
+        .unwrap();
+
+        let next = src.next_window(dt(2026, 3, 20, 0, 6, 0)).unwrap();
+        assert_eq!(next.start, dt(2026, 3, 20, 0, 9, 0));
+        assert_eq!(next.end, dt(2026, 3, 20, 0, 16, 0));
     }
 }
